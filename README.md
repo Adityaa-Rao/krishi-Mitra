@@ -47,7 +47,7 @@ A multilingual AI advisory system for farmers in India, built with Next.js 16+ (
 
 ```bash
 git clone <repository-url>
-cd krishisathi
+cd krishi mitra
 npm install
 ```
 
