@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
-import { X, Mail, Phone, Lock, LogIn, Loader2, ShieldCheck } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { X, Mail, Lock, LogIn, Loader2, ShieldCheck } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
 interface LoginModalProps {
@@ -11,10 +12,12 @@ interface LoginModalProps {
 }
 
 export default function LoginModal({ isOpen, onClose, onSwitchToRegister }: LoginModalProps) {
-  const { login } = useAuth();
+  const router = useRouter();
+  const { login, loginAsGuest } = useAuth();
   const [emailOrPhone, setEmailOrPhone] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [guestLoading, setGuestLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   if (!isOpen) return null;
@@ -34,9 +37,22 @@ export default function LoginModal({ isOpen, onClose, onSwitchToRegister }: Logi
 
     if (res.success) {
       onClose();
-      window.location.reload();
+      router.push("/dashboard");
     } else {
       setErrorMsg(res.error || "Invalid credentials. Please try again.");
+    }
+  };
+
+  const handleGuestLogin = async () => {
+    setGuestLoading(true);
+    setErrorMsg(null);
+    const res = await loginAsGuest();
+    setGuestLoading(false);
+    if (res.success) {
+      onClose();
+      router.push("/dashboard");
+    } else {
+      setErrorMsg(res.error || "Guest access failed.");
     }
   };
 
@@ -48,7 +64,7 @@ export default function LoginModal({ isOpen, onClose, onSwitchToRegister }: Logi
         <div className="flex items-center justify-between pb-4 border-b border-gray-100">
           <div>
             <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
-              MongoDB Authentication
+              Krishi Mitra Portal
             </span>
             <h3 className="text-xl font-black text-gray-900 mt-1">Login to KrishiMitra</h3>
           </div>
@@ -101,6 +117,16 @@ export default function LoginModal({ isOpen, onClose, onSwitchToRegister }: Logi
           >
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}
             Authenticate & Access Dashboard
+          </button>
+
+          <button
+            type="button"
+            disabled={guestLoading}
+            onClick={handleGuestLogin}
+            className="w-full py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs rounded-xl border border-emerald-200 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+          >
+            {guestLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4 text-emerald-600" />}
+            Continue as Guest
           </button>
         </form>
 

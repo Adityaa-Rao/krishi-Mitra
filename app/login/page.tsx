@@ -41,7 +41,7 @@ import InteractiveMascot from "@/components/InteractiveMascot";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login, register, isAuthenticated, loading: authLoading } = useAuth();
+  const { login, register, loginAsGuest, isAuthenticated, loading: authLoading } = useAuth();
   const { currentLanguage, setLanguage } = useStore();
   const { t, i18n } = useTranslation();
 
@@ -62,15 +62,16 @@ export default function LoginPage() {
   const [registerStep, setRegisterStep] = useState<number>(1);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [guestLoading, setGuestLoading] = useState(false);
   const [gpsLoading, setGpsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Login Form State (EMPTY INITIAL VALUES - NO PRE-FILLED DUMMY DATA)
+  // Login Form State
   const [loginEmailOrPhone, setLoginEmailOrPhone] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
 
-  // Complete Registration Form State (EMPTY INITIAL VALUES - NO HARDCODED DUMMY DATA)
+  // Registration Form State with smart agricultural defaults
   const [regForm, setRegForm] = useState({
     // Step 1: Personal & Credentials
     name: "",
@@ -82,17 +83,17 @@ export default function LoginPage() {
     dob: "",
 
     // Step 2: Location & GPS
-    state: "",
-    district: "",
-    village: "",
+    state: "Punjab",
+    district: "Ludhiana",
+    village: "Samrala",
     address: "",
-    pincode: "",
+    pincode: "141114",
     gpsLocation: { lat: 30.9010, lon: 75.8573 },
 
     // Step 3: Farming Profile & Telemetry
-    farmSize: "",
+    farmSize: "5",
     farmSizeUnit: "Acres",
-    primaryCrop: "",
+    primaryCrop: "Wheat, Rice, Tomato",
     soilType: "Loamy Soil",
     irrigationSource: "Borewell / Tube-well",
     experience: "5-10 Years",
@@ -101,7 +102,7 @@ export default function LoginPage() {
     preferredLanguage: currentLanguage || "hi-IN",
     voiceLanguage: currentLanguage || "hi-IN",
     profilePhoto: "",
-    acceptTerms: false,
+    acceptTerms: true,
   });
 
   // Time-based welcome greeting
@@ -186,6 +187,58 @@ export default function LoginPage() {
       router.push("/dashboard");
     } else {
       setErrorMsg(res.error || "Authentication failed. Please check credentials.");
+    }
+  };
+
+  const handleGuestLoginClick = async () => {
+    setGuestLoading(true);
+    setErrorMsg(null);
+    try {
+      const res = await loginAsGuest(currentLanguage || "hi-IN");
+      if (res.success) {
+        router.push("/dashboard");
+      } else {
+        setErrorMsg(res.error || "Unable to start guest session");
+        setGuestLoading(false);
+      }
+    } catch (e: any) {
+      setErrorMsg(e.message || "Guest login failed");
+      setGuestLoading(false);
+    }
+  };
+
+  const handleQuickRegister = async () => {
+    if (!regForm.name.trim() || !regForm.email.trim() || !regForm.phone.trim() || !regForm.password) {
+      setErrorMsg("Please fill in Name, Email, Phone, and Password.");
+      return;
+    }
+    if (regForm.password.length < 6) {
+      setErrorMsg("Password must be at least 6 characters long.");
+      return;
+    }
+    if (regForm.confirmPassword && regForm.password !== regForm.confirmPassword) {
+      setErrorMsg("Passwords do not match.");
+      return;
+    }
+
+    setLoading(true);
+    setErrorMsg(null);
+
+    const res = await register({
+      ...regForm,
+      state: regForm.state || "Punjab",
+      district: regForm.district || "Ludhiana",
+      village: regForm.village || "Samrala",
+      farmSize: regForm.farmSize || "5",
+      primaryCrop: regForm.primaryCrop || "Wheat, Rice, Tomato",
+      acceptTerms: true,
+    });
+    setLoading(false);
+
+    if (res.success) {
+      router.push("/dashboard");
+    } else {
+      setErrorMsg(res.error || "Registration failed. Please try again.");
     }
   };
 
@@ -446,11 +499,26 @@ export default function LoginPage() {
 
                   <button
                     type="button"
-                    onClick={() => router.push("/dashboard")}
-                    className="w-full py-3 bg-gray-50 hover:bg-gray-100 text-gray-800 font-bold text-xs rounded-2xl border border-gray-200 transition flex items-center justify-center gap-2 cursor-pointer"
+                    disabled={guestLoading || loading}
+                    onClick={handleGuestLoginClick}
+                    className="w-full py-3.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 font-bold text-xs rounded-2xl border border-emerald-300 transition flex items-center justify-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
                   >
-                    {t('continueAsGuest')}
+                    {guestLoading ? <Loader2 className="w-4 h-4 animate-spin text-emerald-600" /> : <ShieldCheck className="w-4 h-4 text-emerald-600" />}
+                    <span>{guestLoading ? "Opening Dashboard as Guest..." : t('continueAsGuest')}</span>
                   </button>
+
+                  <div className="pt-2 text-center border-t border-gray-100 mt-2">
+                    <p className="text-xs text-gray-600 font-medium">
+                      New to KrishiMitra?{" "}
+                      <button
+                        type="button"
+                        onClick={() => { setActiveTab("register"); setErrorMsg(null); }}
+                        className="font-bold text-emerald-700 hover:underline cursor-pointer"
+                      >
+                        Create an Account
+                      </button>
+                    </p>
+                  </div>
                 </form>
               ) : (
                 /* RESTORED PROFESSIONAL 4-STEP CREATE ACCOUNT FORM */
@@ -780,7 +848,26 @@ export default function LoginPage() {
                       </button>
                     )}
 
-                    {registerStep < 4 ? (
+                    {registerStep === 1 ? (
+                      <div className="flex-1 flex flex-col sm:flex-row gap-2">
+                        <button
+                          type="button"
+                          disabled={loading}
+                          onClick={handleQuickRegister}
+                          className="flex-1 py-3 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white font-extrabold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                        >
+                          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                          Quick Register & Enter Dashboard
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleNextStep}
+                          className="py-3 px-3.5 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold text-xs rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          Customize Farm <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ) : registerStep < 4 ? (
                       <button
                         type="button"
                         onClick={handleNextStep}
@@ -795,9 +882,22 @@ export default function LoginPage() {
                         className="flex-1 py-3.5 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white font-extrabold text-xs rounded-xl shadow-md transition flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
                       >
                         {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
-                        Save to MongoDB & Launch Dashboard
+                        Save & Launch Dashboard
                       </button>
                     )}
+                  </div>
+
+                  <div className="pt-2 text-center border-t border-gray-100 mt-2">
+                    <p className="text-xs text-gray-600 font-medium">
+                      Already have an account?{" "}
+                      <button
+                        type="button"
+                        onClick={() => { setActiveTab("login"); setErrorMsg(null); }}
+                        className="font-bold text-emerald-700 hover:underline cursor-pointer"
+                      >
+                        Log In
+                      </button>
+                    </p>
                   </div>
 
                 </form>

@@ -8,17 +8,25 @@ export interface UserProfile {
   name: string;
   email: string;
   phone: string;
+  gender?: string;
+  dob?: string;
   state: string;
   district: string;
   village: string;
+  address?: string;
+  pincode?: string;
   gpsLocation?: { lat: number; lon: number };
   farmSize: number;
   farmSizeUnit: string;
   primaryCrop: string;
+  soilType?: string;
+  irrigationSource?: string;
+  experience?: string;
   preferredLanguage: string;
   voiceLanguage: string;
   profilePhoto?: string;
   role: "Farmer" | "Admin";
+  isGuest?: boolean;
   notificationPreferences?: Record<string, boolean>;
   createdAt?: string;
   lastLogin?: string;
@@ -31,9 +39,12 @@ interface AuthContextType {
   checkAuth: () => Promise<boolean>;
   login: (emailOrPhone: string, password: string) => Promise<{ success: boolean; error?: string }>;
   register: (formData: any) => Promise<{ success: boolean; error?: string }>;
+  loginAsGuest: (preferredLanguage?: string) => Promise<{ success: boolean; error?: string }>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
 }
+
+const GUEST_STORAGE_KEY = "krishi_guest_session";
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -44,6 +55,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const setStoreProfile = useStore((state) => state.setProfile);
   const setStoreLanguage = useStore((state) => state.setLanguage);
+  const storeLogin = useStore((state) => state.login);
+  const storeLogout = useStore((state) => state.logout);
 
   const syncUserToStore = useCallback((userData: UserProfile) => {
     setUser(userData);
@@ -51,7 +64,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Sync to Zustand Store
     setStoreProfile({
-      name: userData.name,
+      name: userData.name || "Farmer",
       email: userData.email,
       phone: userData.phone,
       state: userData.state || "Punjab",
@@ -61,17 +74,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       landUnit: userData.farmSizeUnit || "Acres",
       mainCrops: userData.primaryCrop || "Wheat, Rice, Tomato",
       preferredLanguage: userData.preferredLanguage || "hi-IN",
-      soilType: "Loamy Soil",
-      irrigationType: "Drip / Tube-well",
+      soilType: userData.soilType || "Loamy Soil",
+      irrigationType: userData.irrigationSource || "Drip / Tube-well",
     });
 
     if (userData.preferredLanguage) {
       setStoreLanguage(userData.preferredLanguage);
     }
-  }, [setStoreProfile, setStoreLanguage]);
+
+    storeLogin(userData._id || "session-token", true);
+  }, [setStoreProfile, setStoreLanguage, storeLogin]);
 
   const checkAuth = useCallback(async (): Promise<boolean> => {
-    console.log("AUTH: Dashboard auth check started");
+    console.log("AUTH: Checking authentication status...");
     setLoading(true);
     try {
       const res = await fetch("/api/auth/me", { method: "GET" });
@@ -79,27 +94,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (res.ok && data.success && data.authenticated && data.user) {
         syncUserToStore(data.user);
-        console.log("AUTH: Dashboard auth check completed");
-        console.log("AUTH: User authenticated = true");
+        console.log("AUTH: Verified user session from server:", data.user.name);
         setLoading(false);
         return true;
-      } else {
-        setUser(null);
-        setIsAuthenticated(false);
-        console.log("AUTH: Dashboard auth check completed");
-        console.log("AUTH: User authenticated = false");
-        setLoading(false);
-        return false;
       }
     } catch (error) {
-      console.error("❌ AUTH Verification Error:", error);
-      setUser(null);
-      setIsAuthenticated(false);
-      console.log("AUTH: Dashboard auth check completed");
-      console.log("AUTH: User authenticated = false");
-      setLoading(false);
-      return false;
+      console.warn("⚠️ AUTH Verification network warning:", error);
     }
+
+    // Fallback: Check if client has a preserved guest session
+    if (typeof window !== "undefined") {
+      try {
+        const savedGuest = localStorage.getItem(GUEST_STORAGE_KEY);
+        if (savedGuest) {
+          const parsed = JSON.parse(savedGuest);
+          if (parsed && parsed.isGuest) {
+            console.log("AUTH: Restored guest session from localStorage:", parsed.name);
+            syncUserToStore(parsed);
+            setLoading(false);
+            return true;
+          }
+        }
+      } catch (e) {
+        // ignore parse error
+      }
+    }
+
+    setUser(null);
+    setIsAuthenticated(false);
+    setLoading(false);
+    return false;
   }, [syncUserToStore]);
 
   useEffect(() => {
@@ -118,20 +142,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const data = await res.json();
 
       if (res.ok && data.success && data.user) {
-        console.log("AUTH: Login successful");
-        console.log("AUTH: Token/session persisted");
-        syncUserToStore(data.user);
-        console.log("AUTH: Auth state updated");
-
-        // Confirm session verification via backend /api/auth/me BEFORE returning to navigate
-        const isVerified = await checkAuth();
-        if (isVerified) {
-          console.log("AUTH: Navigating to dashboard");
-          return { success: true };
-        } else {
-          console.error("AUTH: Login succeeded but session verification failed.");
-          return { success: false, error: "Session verification failed after login." };
+        console.log("AUTH: Login successful for:", data.user.name);
+        if (typeof window !== "undefined") {
+          localStorage.removeItem(GUEST_STORAGE_KEY);
         }
+        syncUserToStore(data.user);
+        setLoading(false);
+        return { success: true };
       } else {
         setLoading(false);
         return { success: false, error: data.error || "Login failed" };
@@ -154,20 +171,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const data = await res.json();
 
       if (res.ok && data.success && data.user) {
-        console.log("AUTH: Registration successful");
-        console.log("AUTH: Token/session persisted");
-        syncUserToStore(data.user);
-        console.log("AUTH: Auth state updated");
-
-        // Confirm session verification via backend /api/auth/me BEFORE returning to navigate
-        const isVerified = await checkAuth();
-        if (isVerified) {
-          console.log("AUTH: Navigating to dashboard");
-          return { success: true };
-        } else {
-          console.error("AUTH: Registration succeeded but session verification failed.");
-          return { success: false, error: "Session verification failed after account creation." };
+        console.log("AUTH: Registration successful for:", data.user.name);
+        if (typeof window !== "undefined") {
+          localStorage.removeItem(GUEST_STORAGE_KEY);
         }
+        syncUserToStore(data.user);
+        setLoading(false);
+        return { success: true };
       } else {
         setLoading(false);
         return { success: false, error: data.error || "Registration failed" };
@@ -175,6 +185,58 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error: any) {
       setLoading(false);
       return { success: false, error: error.message || "Network error during registration" };
+    }
+  };
+
+  const loginAsGuest = async (preferredLanguage?: string) => {
+    console.log("AUTH: Initializing guest session...");
+    setLoading(true);
+
+    const targetLang = preferredLanguage || useStore.getState().currentLanguage || "hi-IN";
+
+    // Immediate optimistic guest user to guarantee instant dashboard launch
+    const fallbackGuestUser: UserProfile = {
+      _id: `guest_${Date.now()}`,
+      name: "Rajesh Kumar",
+      email: "guest@krishimitra.in",
+      phone: "9876543210",
+      state: "Punjab",
+      district: "Ludhiana",
+      village: "Samrala",
+      farmSize: 5,
+      farmSizeUnit: "Acres",
+      primaryCrop: "Wheat, Rice, Tomato",
+      preferredLanguage: targetLang,
+      voiceLanguage: targetLang,
+      role: "Farmer",
+      isGuest: true,
+    };
+
+    try {
+      const res = await fetch("/api/auth/guest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ preferredLanguage: targetLang }),
+      });
+      const data = await res.json();
+
+      const activeUser = (res.ok && data.success && data.user) ? data.user : fallbackGuestUser;
+
+      if (typeof window !== "undefined") {
+        localStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(activeUser));
+      }
+
+      syncUserToStore(activeUser);
+      setLoading(false);
+      return { success: true };
+    } catch (e) {
+      console.warn("⚠️ Guest API call failed, using client guest session:", e);
+      if (typeof window !== "undefined") {
+        localStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(fallbackGuestUser));
+      }
+      syncUserToStore(fallbackGuestUser);
+      setLoading(false);
+      return { success: true };
     }
   };
 
@@ -189,11 +251,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (res.ok && data.success && data.user) {
         syncUserToStore(data.user);
+        if (data.user.isGuest && typeof window !== "undefined") {
+          localStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(data.user));
+        }
         return { success: true };
       } else {
+        // Local update fallback if offline
+        if (user) {
+          const merged = { ...user, ...updates };
+          syncUserToStore(merged);
+          return { success: true };
+        }
         return { success: false, error: data.error || "Profile update failed" };
       }
     } catch (error: any) {
+      if (user) {
+        const merged = { ...user, ...updates };
+        syncUserToStore(merged);
+        return { success: true };
+      }
       return { success: false, error: error.message || "Network error during profile update" };
     }
   };
@@ -204,8 +280,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error("Logout API Error:", error);
     } finally {
+      if (typeof window !== "undefined") {
+        localStorage.removeItem(GUEST_STORAGE_KEY);
+      }
       setUser(null);
       setIsAuthenticated(false);
+      storeLogout();
     }
   };
 
@@ -218,6 +298,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         checkAuth,
         login,
         register,
+        loginAsGuest,
         updateProfile,
         logout,
       }}

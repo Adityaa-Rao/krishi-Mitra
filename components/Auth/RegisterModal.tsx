@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { useRouter } from "next/navigation";
 import { X, ArrowRight, ArrowLeft, CheckCircle2, MapPin, User, Mail, Phone, Lock, Sprout, Languages, ShieldCheck, Loader2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
@@ -11,6 +12,7 @@ interface RegisterModalProps {
 }
 
 export default function RegisterModal({ isOpen, onClose, onSwitchToLogin }: RegisterModalProps) {
+  const router = useRouter();
   const { register } = useAuth();
   const [step, setStep] = useState<number>(1);
   const [loading, setLoading] = useState<boolean>(false);
@@ -100,7 +102,7 @@ export default function RegisterModal({ isOpen, onClose, onSwitchToLogin }: Regi
 
     if (res.success) {
       onClose();
-      window.location.reload();
+      router.push("/dashboard");
     } else {
       setErrorMsg(res.error || "Registration failed. Please try again.");
     }
@@ -395,7 +397,7 @@ export default function RegisterModal({ isOpen, onClose, onSwitchToLogin }: Regi
               className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
-              Create Account in MongoDB
+              Create Account & Launch Dashboard
             </button>
           )}
         </div>

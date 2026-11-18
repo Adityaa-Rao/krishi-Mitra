@@ -4,11 +4,13 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Dashboard from "@/components/Dashboard";
 import { useAuth } from "@/context/AuthContext";
+import { useStore } from "@/store/useStore";
 import { Loader2 } from "lucide-react";
 
 export default function DashboardPage() {
   const router = useRouter();
   const { isAuthenticated, loading } = useAuth();
+  const storeAuth = useStore((state) => state.isAuthenticated);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -18,18 +20,17 @@ export default function DashboardPage() {
   useEffect(() => {
     const isDemoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
     if (mounted && !loading) {
-      console.log("AUTH: Dashboard auth check started");
-      console.log("AUTH: Dashboard auth check completed");
-      console.log("AUTH: User authenticated =", isAuthenticated);
+      const isUserAuthed = isAuthenticated || storeAuth;
+      console.log("AUTH: Dashboard auth check - authenticated:", isUserAuthed);
 
-      if (!isAuthenticated && !isDemoMode) {
+      if (!isUserAuthed && !isDemoMode) {
         console.log("AUTH: Unauthenticated access attempt to /dashboard. Redirecting to /login...");
         router.push("/login");
       }
     }
-  }, [mounted, loading, isAuthenticated, router]);
+  }, [mounted, loading, isAuthenticated, storeAuth, router]);
 
-  // Loading state guard: Never render login interface or assume unauthenticated while auth is initializing
+  // Loading state guard: Wait until mounted and auth check has settled
   if (!mounted || loading) {
     return (
       <div className="min-h-screen bg-[#F8FAF7] flex items-center justify-center">
@@ -41,6 +42,5 @@ export default function DashboardPage() {
     );
   }
 
-  // Render Dashboard directly without OnboardingFlowManager intercepting the layout
   return <Dashboard />;
 }

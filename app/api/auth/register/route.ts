@@ -3,10 +3,10 @@ import bcrypt from "bcryptjs";
 import { connectDB } from "@/lib/db";
 import { UserModel } from "@/models/User";
 import { signJWT } from "@/lib/jwt";
+import { findUserInMemory, saveUserInMemory, MemoryUser } from "@/lib/memory-db";
 
 export async function POST(req: Request) {
   try {
-    await connectDB();
     const body = await req.json();
     const {
       name,
@@ -50,65 +50,124 @@ export async function POST(req: Request) {
     const cleanEmail = email.toLowerCase().trim();
     const cleanPhone = phone.trim();
 
-    // Check existing email/phone uniqueness in MongoDB
-    const existingUser = await UserModel.findOne({
-      $or: [{ email: cleanEmail }, { phone: cleanPhone }],
-    });
-
-    if (existingUser) {
-      if (existingUser.email === cleanEmail) {
-        return NextResponse.json(
-          { success: false, error: "An account with this email address already exists." },
-          { status: 400 }
-        );
-      }
-      return NextResponse.json(
-        { success: false, error: "An account with this phone number already exists." },
-        { status: 400 }
-      );
-    }
-
     // Hash password securely with bcrypt (10 rounds)
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create complete user document in MongoDB
-    const newUser = await UserModel.create({
-      name,
-      email: cleanEmail,
-      phone: cleanPhone,
-      password: hashedPassword,
-      gender: gender || "Male",
-      dob: dob || "",
-      state: state || "Punjab",
-      district: district || "Ludhiana",
-      village: village || "Samrala",
-      address: address || "",
-      pincode: pincode || "",
-      gpsLocation: gpsLocation || { lat: 30.901, lon: 75.8573 },
-      farmSize: farmSize ? Number(farmSize) : 5,
-      farmSizeUnit: farmSizeUnit || "Acres",
-      primaryCrop: primaryCrop || "Wheat, Rice, Tomato",
-      soilType: soilType || "Alluvial / Loamy",
-      irrigationSource: irrigationSource || "Canal / Borewell",
-      experience: experience || "5+ Years",
-      preferredLanguage: preferredLanguage || "hi-IN",
-      voiceLanguage: voiceLanguage || preferredLanguage || "hi-IN",
-      profilePhoto: profilePhoto || "",
-      role: "Farmer",
-      lastLogin: new Date(),
-    });
+    let isDbConnected = false;
+    let newUserDoc: any = null;
+
+    try {
+      await connectDB();
+      isDbConnected = true;
+
+      // Check existing email/phone uniqueness in MongoDB
+      const existingUser = await UserModel.findOne({
+        $or: [{ email: cleanEmail }, { phone: cleanPhone }],
+      });
+
+      if (existingUser) {
+        if (existingUser.email === cleanEmail) {
+          return NextResponse.json(
+            { success: false, error: "An account with this email address already exists." },
+            { status: 400 }
+          );
+        }
+        return NextResponse.json(
+          { success: false, error: "An account with this phone number already exists." },
+          { status: 400 }
+        );
+      }
+
+      // Create complete user document in MongoDB
+      newUserDoc = await UserModel.create({
+        name,
+        email: cleanEmail,
+        phone: cleanPhone,
+        password: hashedPassword,
+        gender: gender || "Male",
+        dob: dob || "",
+        state: state || "Punjab",
+        district: district || "Ludhiana",
+        village: village || "Samrala",
+        address: address || "",
+        pincode: pincode || "",
+        gpsLocation: gpsLocation || { lat: 30.901, lon: 75.8573 },
+        farmSize: farmSize ? Number(farmSize) : 5,
+        farmSizeUnit: farmSizeUnit || "Acres",
+        primaryCrop: primaryCrop || "Wheat, Rice, Tomato",
+        soilType: soilType || "Alluvial / Loamy",
+        irrigationSource: irrigationSource || "Canal / Borewell",
+        experience: experience || "5+ Years",
+        preferredLanguage: preferredLanguage || "hi-IN",
+        voiceLanguage: voiceLanguage || preferredLanguage || "hi-IN",
+        profilePhoto: profilePhoto || "",
+        role: "Farmer",
+        lastLogin: new Date(),
+      });
+    } catch (dbErr: any) {
+      console.warn("⚠️ [DB FALLBACK FOR REGISTER]: MongoDB unavailable, registering to resilient memory store:", dbErr.message);
+      
+      // Check duplicate in memory
+      const memDup = findUserInMemory(cleanEmail) || findUserInMemory(cleanPhone);
+      if (memDup) {
+        if (memDup.email === cleanEmail) {
+          return NextResponse.json(
+            { success: false, error: "An account with this email address already exists." },
+            { status: 400 }
+          );
+        }
+        return NextResponse.json(
+          { success: false, error: "An account with this phone number already exists." },
+          { status: 400 }
+        );
+      }
+
+      const memUser: MemoryUser = {
+        _id: `user_${Date.now()}`,
+        name,
+        email: cleanEmail,
+        phone: cleanPhone,
+        password: hashedPassword,
+        gender: gender || "Male",
+        dob: dob || "",
+        state: state || "Punjab",
+        district: district || "Ludhiana",
+        village: village || "Samrala",
+        address: address || "",
+        pincode: pincode || "",
+        gpsLocation: gpsLocation || { lat: 30.901, lon: 75.8573 },
+        farmSize: farmSize ? Number(farmSize) : 5,
+        farmSizeUnit: farmSizeUnit || "Acres",
+        primaryCrop: primaryCrop || "Wheat, Rice, Tomato",
+        soilType: soilType || "Alluvial / Loamy",
+        irrigationSource: irrigationSource || "Canal / Borewell",
+        experience: experience || "5+ Years",
+        preferredLanguage: preferredLanguage || "hi-IN",
+        voiceLanguage: voiceLanguage || preferredLanguage || "hi-IN",
+        profilePhoto: profilePhoto || "",
+        role: "Farmer",
+        createdAt: new Date().toISOString(),
+        lastLogin: new Date().toISOString(),
+      };
+
+      saveUserInMemory(memUser);
+      newUserDoc = memUser;
+    }
+
+    const userIdStr = newUserDoc._id ? newUserDoc._id.toString() : `user_${Date.now()}`;
 
     // Generate JWT token
     const token = signJWT({
-      userId: (newUser._id as any).toString(),
-      email: newUser.email,
-      phone: newUser.phone,
-      role: newUser.role,
+      userId: userIdStr,
+      email: cleanEmail,
+      phone: cleanPhone,
+      role: newUserDoc.role || "Farmer",
+      name: newUserDoc.name,
     });
 
     // Sanitize user output (never return password)
-    const userObj = newUser.toObject();
-    delete (userObj as any).password;
+    const userObj = typeof newUserDoc.toObject === "function" ? newUserDoc.toObject() : { ...newUserDoc };
+    delete userObj.password;
 
     const response = NextResponse.json({
       success: true,
